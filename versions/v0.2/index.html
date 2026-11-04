@@ -1,0 +1,194 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover"><title>厨房小人 HD-2D</title>
+<style>html,body{margin:0;height:100%;overflow:hidden;background:#111;color:#eee;font-family:sans-serif;touch-action:none;-webkit-user-select:none;user-select:none;overscroll-behavior:none}
+#c{image-rendering:pixelated;position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);display:block}
+#help{position:fixed;bottom:calc(4px + env(safe-area-inset-bottom));left:22%;right:22%;opacity:.85;text-align:center;font-size:12px;text-shadow:0 1px 2px #000;pointer-events:none;z-index:2}
+.tb{position:fixed;z-index:3;border-radius:50%;background:rgba(255,240,210,.18);border:2px solid rgba(255,240,210,.5);color:#fff;font:bold 26px sans-serif;display:flex;align-items:center;justify-content:center;touch-action:none}
+#joy{left:calc(20px + env(safe-area-inset-left));bottom:calc(20px + env(safe-area-inset-bottom));width:140px;height:140px}
+#knob{width:56px;height:56px;border-radius:50%;background:rgba(255,240,210,.55);position:absolute;left:42px;top:42px;pointer-events:none}
+#be{right:calc(24px + env(safe-area-inset-right));bottom:calc(70px + env(safe-area-inset-bottom));width:76px;height:76px}
+#bg{right:calc(110px + env(safe-area-inset-right));bottom:calc(20px + env(safe-area-inset-bottom));width:60px;height:60px;font-size:20px}
+#bb{right:calc(24px + env(safe-area-inset-right));bottom:calc(160px + env(safe-area-inset-bottom));width:56px;height:56px;font-size:18px}
+@media (pointer:coarse){#help{top:26px;bottom:auto;left:6px;right:6px;font-size:10px}}
+@media (hover:hover) and (pointer:fine){.tb{display:none}}</style></head><body>
+<canvas id="c" width="480" height="288"></canvas><div id="joy" class="tb"><div id="knob"></div></div><div id="be" class="tb">E</div><div id="bg" class="tb">G</div><div id="bb" class="tb">B</div>
+<div id="help">WASD/方向键/左下摇杆 移动 · E 键/按钮 与小人对话 · G 网格/判定区 · B 切换拖鞋/赤脚 · 躲开江涵的脚步阴影!发光点为复活点,冰箱底下最安全</div>
+<script>
+const C=document.getElementById('c'),X=C.getContext('2d');X.imageSmoothingEnabled=false;
+const T=16;let VW=30,VH=18,CW=480,CH=288;const W=100,H=100;
+// solid map
+const solid=new Uint8Array(W*H);const S=(x,y)=>x<0||y<0||x>=W||y>=H||solid[y*W+x];
+const rect=(x,y,w,h)=>{for(let j=y;j<y+h;j++)for(let i=x;i<x+w;i++)if(i>=0&&j>=0&&i<W&&j<H)solid[j*W+i]=1};
+// fridge: x 88..99, body solid except gap rows y 0..? -> fridge bottom overhang: cells x>=88 walkable under-gap from x88-91 (4 cells), body x>=92
+rect(92,0,8,100);
+const crumb=[[40,20],[41,20],[42,20],[39,21],[40,21],[41,21],[42,21],[43,21],[39,22],[40,22],[41,22],[42,22],[43,22],[40,23],[41,23],[42,23]];crumb.forEach(([x,y])=>solid[y*W+x]=1);
+rect(20,60,25,9); // slipper
+// respawns
+const spawns=[{x:90,y:50,on:false},{x:30,y:71,on:false}];
+let respawn={x:10,y:10};
+const npc={x:84,y:46};
+const P={x:10,y:10,mt:0,dead:0,dir:0};
+// feet path: alternating left/right steps along loop
+const path=[];{const pts=[[15,30],[45,15],[75,30],[75,70],[50,85],[20,75]];
+for(let k=0;k<pts.length;k++){const a=pts[k],b=pts[(k+1)%pts.length];const d=Math.hypot(b[0]-a[0],b[1]-a[1]),n=Math.max(1,Math.round(d/18));
+for(let s=0;s<n;s++){const t=s/n,cx=a[0]+(b[0]-a[0])*t,cy=a[1]+(b[1]-a[1])*t,ang=Math.atan2(b[1]-a[1],b[0]-a[0]);
+const side=path.length%2?1:-1;path.push({x:cx+Math.cos(ang+Math.PI/2)*6*side,y:cy+Math.sin(ang+Math.PI/2)*6*side,a:ang,side})}}}
+let stepI=0,stepT=0;const SH=1.5,STAY=1,LIFT=.4,CYC=SH+STAY+LIFT;let shake=0,flash=0,dlg=null,dlgI=0;
+const keys={};onkeydown=e=>{keys[e.key.toLowerCase()]=1;if(e.key.toLowerCase()=='g')showGrid=!showGrid;if(e.key.toLowerCase()=='b')toggleMode();if(e.key.toLowerCase()=='e')pressE();
+if(e.key.startsWith('Arrow'))e.preventDefault()};
+function pressE(){{if(dlg){dlgI++;if(dlgI>=dlg.length)dlg=null}else if(Math.abs(P.x-npc.x)+Math.abs(P.y-npc.y)<=2){dlg=["小心!那是江涵的脚步……地上的影子越深,脚就越快落下。","被踩到就完了。冰箱底下那条缝只有3、4厘米高,她的脚伸不进去。","往东走,钻进冰箱缝——那里还有个发光的复活点。"];dlgI=0}}}onkeyup=e=>keys[e.key.toLowerCase()]=0;
+function update(dt){if(P.dead>0){P.dead-=dt;if(P.dead<=0){P.x=respawn.x;P.y=respawn.y}}
+else if(!dlg){P.mt-=dt;if(P.mt<=0){let dx=0,dy=0;if(keys.a||keys.arrowleft)dx=-1;else if(keys.d||keys.arrowright)dx=1;else if(keys.w||keys.arrowup)dy=-1;else if(keys.s||keys.arrowdown)dy=1;
+if((dx||dy)&&!S(P.x+dx,P.y+dy)&&!(P.x+dx==npc.x&&P.y+dy==npc.y)){P.x+=dx;P.y+=dy;P.mt=.07;P.dir=dx?(dx>0?1:3):(dy>0?0:2)}}
+spawns.forEach(s=>{if(s.x==P.x&&s.y==P.y){spawns.forEach(o=>o.on=false);s.on=true;respawn={x:s.x,y:s.y}}})}
+const prev=stepT;stepT+=dt;if(footMode=='slipper'&&prev<SH-.14&&stepT>=SH-.14)pata();if(footMode!='slipper'&&prev<SH&&stepT>=SH)thud();if(prev<SH&&stepT>=SH){shake=.35;const f=path[stepI];if(P.dead<=0&&P.x<88&&inFoot(f,P.x+.5,P.y+.5)){P.dead=1;flash=.3}}
+if(stepT>=CYC){stepT=0;stepI=(stepI+1)%path.length}shake=Math.max(0,shake-dt);flash=Math.max(0,flash-dt)}
+function px(x,y,w,h,c){X.fillStyle=c;X.fillRect(Math.round(x),Math.round(y),w,h)}
+// ---- foot pixel model: one mask drives both drawing and kill zone ----
+const FR=4,FW=24*FR,FH=12*FR; // 4 px per cell, 24x12 cells
+const TOES=[[2.75,1.25,11.9],[0.45,.85,11.2],[-1.3,.76,10.6],[-2.75,.66,9.95],[-3.4,.52,9.2]]; // medial offset, half width, tip (graded, little toe tucked)
+const frontAt=m=>8.5-0.055*(m-2.75)**2;
+const clamp=x=>x<0?0:x>1?1:x;
+function inToe(u,m){for(let k=0;k<5;k++){const[c,h,tip]=TOES[k],b=frontAt(c)-.4;if(u<b-h||u>tip)continue;let d;
+ const hw=h*(1-.18*clamp((u-b)/(tip-b)));// slight taper
+ if(u>tip-h)d=((u-(tip-h))/h)**2+((m-c)/hw)**2;else if(u<b)d=((u-b)/(h*.8))**2+((m-c)/h)**2;else d=((m-c)/hw)**2;if(d<=1)return k}return -1}
+function soleW(u){let wl,wm;if(u<-6){const r=u<-8.5?3.3*Math.sqrt(Math.max(0,1-((u+8.5)/3.25)**2)):3.3;wl=wm=r}
+ else if(u<1){const t=(u+6)/7;wl=3.3+t*1.2;wm=3.3+t*1.7-1.5*Math.sin(Math.PI*t)}else{const t=(u-1)/7;wl=4.5-t*1.0;wm=5-t*1.3}return[wl,wm]}
+function archA(u,m){return clamp((u+7)/2.2)*clamp((1.8-u)/2.6)*clamp((m+2.6)/1.8)}
+const BAYER=[[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+const footMask={};// side -> {z:Int8Array(zone),c:Array colors}
+// zones: 0 none,1 sole kill,2 arch safe,3 gap safe,4 toe kill
+function buildFoot(side){const z=new Int8Array(FW*FH),a=new Float32Array(FW*FH),tk=new Int8Array(FW*FH).fill(-1);
+ for(let j=0;j<FH;j++)for(let i=0;i<FW;i++){const u=(i+.5)/FR-12,m=((j+.5)/FR-6)*side,id=j*FW+i,k=inToe(u,m);
+  if(k>=0){z[id]=4;tk[id]=k;continue}
+  if(u<-11.75)continue;const[wl,wm]=soleW(u);
+  // front edge of sole follows toe line curve; between toes -> gap wedge
+  const front=frontAt(m);
+  if(m<-wl||m>wm)continue;
+  if(u>front-.9&&m>-3.4&&m<2.75){if(u<front+.5)z[id]=3;continue}
+  if(u>front)continue;
+  const A=archA(u,m);a[id]=A;z[id]=A>=.5?2:1}
+ const cv=document.createElement('canvas');cv.width=FW;cv.height=FH;const g=cv.getContext('2d');
+ const Z=(i,j)=>i<0||j<0||i>=FW||j>=FH?0:z[j*FW+i],K=(i,j)=>i<0||j<0||i>=FW||j>=FH?-1:tk[j*FW+i];
+ const SH=['#d29880','#daa48e','#e3b39e','#edc5b1','#f6d8c6'];
+ for(let j=0;j<FH;j++)for(let i=0;i<FW;i++){const id=j*FW+i,q=z[id];if(!q)continue;let c;const h=((i*73856093)^(j*19349663))>>>0;
+  const edge=!Z(i+1,j)||!Z(i-1,j)||!Z(i,j+1)||!Z(i,j-1);
+  if(q==3){// gap wedge: darkest deep in, lighter toward rim
+   const nt=[[1,0],[-1,0],[0,1],[0,-1]].filter(([x,y])=>Z(i+x,j+y)==4).length;c=nt>=2?'#3a2018':nt==1?'#5a3326':'#6e4232'}
+  else if(q==4){const k=tk[id],[cc,hh,tip]=TOES[k],u=(i+.5)/FR-12,m=((j+.5)/FR-6)*side;
+   const nb=[[1,0],[-1,0],[0,1],[0,-1]];const nearGap=nb.some(([x,y])=>{const w=Z(i+x,j+y);return w==3||(w==4&&K(i+x,j+y)!=k)});
+   const nl=hh*1.15,nw=hh*.62,inNail=u>tip-nl&&u<tip-.25&&Math.abs(m-cc)<nw,nailRim=!inNail&&u>tip-nl-.3&&u<tip-.05&&Math.abs(m-cc)<nw+.3;
+   const shade=u<frontAt(cc)+.2?'#dba48c':(m-cc)*1>hh*.4?'#f1c2a8':'#ebb89e';
+   c=edge?'#9a5e4a':nearGap?'#8a5240':inNail?'#f7e2d6':nailRim?'#b98070':shade;
+   if(inNail&&Math.abs(u-(tip-nl*.5))<.13&&Math.abs(m-(cc+nw*.4))<.13)c='#ffffff'}
+  else{const A=a[id];let lv=Math.floor(A*4+BAYER[j%4][i%4]/16);lv=Math.min(4,lv);c=edge?'#9a5e4a':SH[lv];
+   if(!edge&&A<.3&&h%23==0)c='#a8968c';if(!edge&&lv>=3&&h%41==0)c='#fbe6d8'}
+  g.fillStyle=c;g.fillRect(i,j,1,1)}
+ return{z,cv,wc:24,hc:12}}
+function buildSlipper(side){const wc=28,hc=12,Wp=wc*FR,Hp=hc*FR,z=new Int8Array(Wp*Hp),kind=new Int8Array(Wp*Hp);
+ const hw=u=>{if(u<-13||u>13)return -1;const t=(u+13)/26;let w=4.2+1.3*Math.sin(Math.min(1,t*1.4)*Math.PI/2)-(t>.8?(t-.8)*1.5:0);
+  if(u<-9)w*=Math.sqrt(Math.max(0,1-((u+9)/4)**2));if(u>8.5)w*=Math.sqrt(Math.max(0,1-((u-8.5)/4.5)**2));return w};
+ for(let j=0;j<Hp;j++)for(let i=0;i<Wp;i++){const u=(i+.5)/FR-14,v=(j+.5)/FR-6,m=v*side,id=j*Wp+i,w=hw(u);
+  if(w>0&&Math.abs(v)<=w){z[id]=1;kind[id]=1;continue}}
+ const cv=document.createElement('canvas');cv.width=Wp;cv.height=Hp;const g=cv.getContext('2d');const K=(i,j)=>i<0||j<0||i>=Wp||j>=Hp?0:kind[j*Wp+i];
+ for(let j=0;j<Hp;j++)for(let i=0;i<Wp;i++){const id=j*Wp+i,q=kind[id];if(!q)continue;const u=(i+.5)/FR-14,v=(j+.5)/FR-6,m=v*side,h=((i*73856093)^(j*19349663))>>>0;let c;
+  const edge=K(i+1,j)!=q||K(i-1,j)!=q||K(i,j+1)!=q||K(i,j-1)!=q;
+  {const w=hw(u),d=w-Math.abs(v);
+   if(edge)c='#1e2834';else if(v>0&&d<2.6&&d>0)c=d<.5?'#2a3644':(Math.floor(u*2)%3==0?'#3a4858':'#465768');// thickness edge, 2.6 cells
+   else if(d<.8)c='#56677c';
+   else{const wear=Math.max(0,1-Math.hypot((u-5)/3.5,(m-1)/2.5),1-Math.hypot((u+10)/2.5,m/2.5));
+    let groove=u<-7?((u*FR|0)%5<1):((((u*1.4+Math.abs(m)*.9)%1.5)+1.5)%1.5<.32);
+    if(wear>.45&&h%3)groove=false;c=groove?'#3f4e62':wear>.3?(wear>.6?'#93a2b4':'#8090a4'):'#6a7c92';
+    if(h%29==0)c='#a4a29c';else if(h%47==0)c='#8e8c88'}}
+  g.fillStyle=c;g.fillRect(i,j,1,1)}
+ return{z,cv,wc,hc}}
+let footMode='slipper';
+function getFoot(side){const k=footMode+side;return footMask[k]||(footMask[k]=footMode=='slipper'?buildSlipper(side):buildFoot(side))}
+function footZoneAt(f,px,py){const F=getFoot(f.side),dx=px-f.x,dy=py-f.y,c=Math.cos(-f.a),s=Math.sin(-f.a);const u=dx*c-dy*s,v=dx*s+dy*c;
+ const W=F.wc*FR,Hh=F.hc*FR,i=Math.floor((u+F.wc/2)*FR),j=Math.floor((v+F.hc/2)*FR);if(i<0||j<0||i>=W||j>=Hh)return 0;return F.z[j*W+i]}
+function inFoot(f,px,py){const q=footZoneAt(f,px,py);return q==1||q==4}
+function drawFoot(f,ox,oy,alpha,liftF,liftH){if(liftH===undefined)liftH=liftF;const F=getFoot(f.side),W=F.wc*FR,Hh=F.hc*FR;
+ X.save();X.imageSmoothingEnabled=false;X.globalAlpha=alpha;
+ [[0,liftH],[1,liftF]].forEach(([half,l])=>{X.save();X.translate(f.x*T-ox,f.y*T-oy-l);X.rotate(f.a);
+  X.drawImage(F.cv,half*W/2,0,W/2,Hh,-F.wc/2*T+half*F.wc/2*T,-F.hc/2*T,F.wc/2*T,F.hc*T);X.restore()});X.restore()}
+// audio: synthesized slap
+let AC=null;function unlockAudio(){if(!AC){try{AC=new (window.AudioContext||window.webkitAudioContext)()}catch(e){}}if(AC&&AC.state=='suspended')AC.resume()}
+['touchstart','pointerdown','keydown'].forEach(ev=>addEventListener(ev,unlockAudio,{passive:true}));
+function slap(t,vol){if(!AC)return;const n=AC.sampleRate*.09|0,b=AC.createBuffer(1,n,AC.sampleRate),d=b.getChannelData(0);for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,3);
+ const s=AC.createBufferSource();s.buffer=b;const lp=AC.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1400;const g=AC.createGain();g.gain.value=vol;s.connect(lp).connect(g).connect(AC.destination);s.start(t);
+ const o=AC.createOscillator(),og=AC.createGain();o.frequency.setValueAtTime(110,t);o.frequency.exponentialRampToValueAtTime(45,t+.12);og.gain.setValueAtTime(vol*.8,t);og.gain.exponentialRampToValueAtTime(.001,t+.15);o.connect(og).connect(AC.destination);o.start(t);o.stop(t+.16)}
+function pata(){if(!AC)return;const t=AC.currentTime+.01;slap(t,.5);slap(t+.14,.9)}
+function thud(){if(!AC)return;slap(AC.currentTime+.01,.7)}
+function toggleMode(){footMode=footMode=='slipper'?'barefoot':'slipper'}
+let showGrid=false;
+function drawOverlay(ox,oy){if(!showGrid)return;const f=path[stepI],x0=Math.floor(ox/T),y0=Math.floor(oy/T);
+ for(let j=y0;j<=y0+VH+1;j++)for(let i=x0;i<=x0+VW+1;i++){const q=footZoneAt(f,i+.5,j+.5);
+  if(q==1||q==4){X.fillStyle='rgba(255,0,0,.35)';X.fillRect(i*T-ox,j*T-oy,T,T)}else if(q==2||q==3){X.fillStyle='rgba(0,255,120,.3)';X.fillRect(i*T-ox,j*T-oy,T,T)}}
+ X.strokeStyle='rgba(0,0,0,.25)';X.lineWidth=1;X.beginPath();for(let i=x0;i<=x0+VW+1;i++){X.moveTo(i*T-ox+.5,0);X.lineTo(i*T-ox+.5,CH)}
+ for(let j=y0;j<=y0+VH+1;j++){X.moveTo(0,j*T-oy+.5);X.lineTo(CW,j*T-oy+.5)}X.stroke()}
+function draw(){const sx=shake>0?(Math.random()-.5)*8:0,sy=shake>0?(Math.random()-.5)*8:0;
+let cx=Math.max(0,Math.min(W-VW,P.x-VW/2+.5))*T,cy=Math.max(0,Math.min(H-VH,P.y-VH/2+.5))*T;const ox=Math.round(cx-sx),oy=Math.round(cy-sy);
+const x0=Math.floor(ox/T),y0=Math.floor(oy/T);
+for(let j=y0-1;j<=y0+VH+1;j++)for(let i=x0-1;i<=x0+VW+1;i++){if(i<0||j<0||i>=W||j>=H){px(i*T-ox,j*T-oy,T,T,'#3a2a20');continue}
+const ti=Math.floor(i/60),tj=Math.floor(j/60),g=(i%60==0)||(j%60==0);const base=(ti+tj)%2?'#d9cdb4':'#e3d8c0';
+px(i*T-ox,j*T-oy,T,T,g?'#8e826e':base);if(!g&&((i*7+j*13)%11==0))px(i*T-ox+5,j*T-oy+9,2,2,'#cbbf a5'.replace(' ',''))}
+// slipper
+const so=[20*T-ox,60*T-oy];X.fillStyle='#5b7fa8';X.fillRect(so[0],so[1]+8,25*T,9*T-16);X.fillRect(so[0]+8,so[1],25*T-40,9*T);
+X.fillStyle='#3d5a7d';X.fillRect(so[0]+12*T,so[1]-6,10*T,9*T+12);X.fillStyle='#7aa0c8';for(let k=0;k<6;k++)X.fillRect(so[0]+12*T+k*26,so[1]+10,10,9*T-20);
+X.fillStyle='rgba(0,0,0,.25)';X.fillRect(so[0],so[1]+9*T,25*T,6);
+// crumb
+crumb.forEach(([x,y],k)=>{px(x*T-ox,y*T-oy-4,T,T+4,k%3?'#c8843c':'#a8642a');px(x*T-ox+3,y*T-oy-2,4,3,'#e8b060')});
+// spawns
+const tm=performance.now()/1000;spawns.forEach(s=>{const g=X.createRadialGradient(s.x*T-ox+8,s.y*T-oy+8,1,s.x*T-ox+8,s.y*T-oy+8,22+3*Math.sin(tm*3));
+g.addColorStop(0,s.on?'rgba(120,255,160,.9)':'rgba(120,200,255,.7)');g.addColorStop(1,'rgba(0,0,0,0)');X.fillStyle=g;X.fillRect(s.x*T-ox-20,s.y*T-oy-20,56,56)});
+// npc
+drawGuy(npc.x*T-ox,npc.y*T-oy,'#a04a8a',0);if(Math.abs(P.x-npc.x)+Math.abs(P.y-npc.y)<=2&&!dlg){X.fillStyle='#fff';X.font='10px sans-serif';X.fillText('E 对话',npc.x*T-ox-6,npc.y*T-oy-6)}
+// player
+if(P.dead<=0)drawGuy(P.x*T-ox,P.y*T-oy,'#3a6ad0',P.dir);
+// foot
+const f=path[stepI];const PRE=.45;
+if(stepT<SH){const k=stepT/SH;X.save();X.filter='brightness(0)';drawFoot(f,ox,oy-6,.1+.6*k*k,0);X.restore();
+ if(stepT>SH-PRE){const p=(stepT-(SH-PRE))/PRE;// descending: front lands first, heel raised then slaps
+  const lF=footMode=='slipper'?Math.max(0,1-p/.69)*40:(1-p)*50,lH=footMode=='slipper'?(1-p)*70:(1-p)*50;drawFoot(f,ox,oy,Math.min(1,p*2),lF,lH)}}
+else{X.save();X.filter='brightness(0)';drawFoot(f,ox,oy-8,.5,0);X.restore();
+ const q=stepT>SH+STAY?(stepT-SH-STAY)/LIFT:0;// lift: heel first
+ drawFoot(f,ox,oy,1-Math.max(0,q-.5)*2,Math.max(0,q-.3)/.7*120,q*140)}
+// shadow layer during warning: tint dark
+// fridge (drawn over, gap underside)
+const fx=88*T-ox;X.fillStyle='#1a1a1e';X.fillRect(fx,-oy,4*T,H*T);X.fillStyle='rgba(0,0,0,.35)';X.fillRect(fx-T,-oy,T,H*T);
+X.fillStyle='#e8ecef';X.fillRect(92*T-ox,-oy,8*T,H*T);X.fillStyle='#b8bec4';X.fillRect(92*T-ox,-oy,6,H*T);
+for(let y=0;y<H;y+=12)X.fillRect(92*T-ox,y*T-oy,8*T,3);
+spawns.forEach(s=>{if(s.x>=88){X.fillStyle='rgba(120,255,160,.25)';X.fillRect(s.x*T-ox-4,s.y*T-oy-4,24,24)}});
+if(P.dead<=0&&P.x>=88&&P.x<92)drawGuy(P.x*T-ox,P.y*T-oy,'#3a6ad0',P.dir);
+drawOverlay(ox,oy);
+// HD-2D post: warm light, top fog, vignette
+let g=X.createLinearGradient(0,0,CW,CH);g.addColorStop(0,'rgba(255,200,120,.28)');g.addColorStop(.5,'rgba(255,180,100,.06)');g.addColorStop(1,'rgba(40,20,60,.2)');X.fillStyle=g;X.fillRect(0,0,CW,CH);
+for(let i=0;i<3;i++){X.fillStyle=`rgba(255,240,210,${.03})`;X.beginPath();X.moveTo(40+i*90,0);X.lineTo(120+i*90,0);X.lineTo(260+i*90,CH);X.lineTo(180+i*90,CH);X.fill()}
+g=X.createLinearGradient(0,0,0,70);g.addColorStop(0,'rgba(230,215,195,.6)');g.addColorStop(1,'rgba(230,215,195,0)');X.fillStyle=g;X.fillRect(0,0,CW,70);
+g=X.createRadialGradient(CW/2,CH/2,90,CW/2,CH/2,Math.max(CW,CH)*.62);g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(0,0,0,.65)');X.fillStyle=g;X.fillRect(0,0,CW,CH);
+if(flash>0){X.fillStyle=`rgba(255,60,40,${flash*2.5})`;X.fillRect(0,0,CW,CH)}
+if(P.dead>0){X.fillStyle='#fff';X.font='bold 16px sans-serif';X.fillText('被踩扁了……',CW/2-45,CH/2)}
+X.fillStyle='rgba(0,0,0,.5)';X.fillRect(4,4,230,16);X.fillStyle='#fff';X.font='10px sans-serif';X.fillText(`位置 ${P.x},${P.y} cm  复活点:${spawns.some(s=>s.on)?'已激活':'起点'} ${footMode=='slipper'?'拖鞋':'赤脚'}`,8,15);
+if(dlg){X.fillStyle='rgba(20,15,30,.9)';X.fillRect(10,CH-78,CW-20,66);X.strokeStyle='#e8c070';X.lineWidth=2;X.strokeRect(10,CH-78,CW-20,66);
+X.fillStyle='#e8c070';X.font='bold 11px sans-serif';X.fillText('小小人 阿豆',20,CH-62);X.fillStyle='#fff';X.font='12px sans-serif';wrap(dlg[dlgI],20,CH-42,CW-40);X.fillStyle='#aaa';X.font='9px sans-serif';X.fillText(`(${dlgI+1}/${dlg.length}) 按E继续`,CW-90,CH-18)}}
+function drawGuy(x,y,col,dir){px(x+3,y+13,10,3,'rgba(0,0,0,.3)');px(x+5,y+2,6,5,'#f1c8a0');px(x+5,y+1,6,2,'#3a2414');px(x+4,y+7,8,5,col);px(x+5,y+12,2,3,'#333');px(x+9,y+12,2,3,'#333');
+if(dir==0){px(x+6,y+4,1,1,'#000');px(x+9,y+4,1,1,'#000')}else if(dir==1)px(x+9,y+4,1,1,'#000');else if(dir==3)px(x+6,y+4,1,1,'#000')}
+function wrap(t,x,y,w){let line='',yy=y;for(const ch of t){if(X.measureText(line+ch).width>w){X.fillText(line,x,yy);line='';yy+=15}line+=ch}X.fillText(line,x,yy)}
+function resize(){const sw=innerWidth,sh=innerHeight,land=sw>=sh,ar=land?sw/sh:sh/sw;let L=30,Sh=Math.max(12,Math.round(30/ar));
+ if(land){VW=L;VH=Sh}else{VH=L;VW=Sh}CW=VW*T;CH=VH*T;C.width=CW;C.height=CH;X.imageSmoothingEnabled=false;
+ const k=Math.min(sw/CW,sh/CH);C.style.width=CW*k+'px';C.style.height=CH*k+'px'}
+addEventListener('resize',resize);addEventListener('orientationchange',()=>setTimeout(resize,200));resize();
+// touch controls
+const tk={};const joy=document.getElementById('joy'),knob=document.getElementById('knob');let jid=null;
+function joyMove(t){const r=joy.getBoundingClientRect(),dx=t.clientX-r.left-r.width/2,dy=t.clientY-r.top-r.height/2,d=Math.hypot(dx,dy),mx=50,k=d>mx?mx/d:1;
+ knob.style.left=(42+dx*k)+'px';knob.style.top=(42+dy*k)+'px';['a','d','w','s'].forEach(q=>keys[q]=0);if(d>14){if(Math.abs(dx)>Math.abs(dy))keys[dx>0?'d':'a']=1;else keys[dy>0?'s':'w']=1}}
+joy.addEventListener('touchstart',e=>{e.preventDefault();const t=e.changedTouches[0];jid=t.identifier;joyMove(t)},{passive:false});
+joy.addEventListener('touchmove',e=>{e.preventDefault();for(const t of e.changedTouches)if(t.identifier===jid)joyMove(t)},{passive:false});
+const joyEnd=e=>{e.preventDefault();for(const t of e.changedTouches)if(t.identifier===jid){jid=null;knob.style.left='42px';knob.style.top='42px';['a','d','w','s'].forEach(q=>keys[q]=0)}};
+joy.addEventListener('touchend',joyEnd,{passive:false});joy.addEventListener('touchcancel',joyEnd,{passive:false});
+document.getElementById('be').addEventListener('touchstart',e=>{e.preventDefault();pressE()},{passive:false});
+document.getElementById('bb').addEventListener('touchstart',e=>{e.preventDefault();toggleMode()},{passive:false});
+document.getElementById('bg').addEventListener('touchstart',e=>{e.preventDefault();showGrid=!showGrid},{passive:false});
+document.addEventListener('touchmove',e=>e.preventDefault(),{passive:false});document.addEventListener('gesturestart',e=>e.preventDefault());
+document.addEventListener('dblclick',e=>e.preventDefault());
+let last=performance.now();function loop(t){const dt=Math.min(.05,(t-last)/1000);last=t;update(dt);draw();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+</script></body></html>
