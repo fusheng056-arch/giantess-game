@@ -68,7 +68,7 @@ body.cut #actions,body.cut #joyzone,body.cut #topbtns,body.cut #hud,body.cut #he
 <div id="stage"><canvas id="gl"></canvas></div>
 <div id="flash" class="ui"></div>
 <div id="hud" class="ui"><span id="fps">FPS --</span><div style="display:none"><span id="qlabel">中</span><b id="crumbs">0/0</b><span id="sec">A</span><span id="surv"></span><span id="hid"></span></div></div>
-<div id="topbtns" class="ui"><button class="btn" id="btnMem">回忆</button><button class="btn" id="btnQ">画质：中</button><button class="btn" id="btnHelp">帮助</button></div>
+<div id="topbtns" class="ui"><button class="btn" id="btnMem">回忆</button><button class="btn" id="btnQ">画质：中</button><button class="btn" id="btnHelp">帮助</button><button class="btn" id="btnOther">其它模式</button></div>
 <div id="help" class="ui">移动：左侧摇杆 / WASD / 方向键 · 奔跑：按住「奔跑」/ Shift · 跳跃：「跳」/ 空格<br>转动视角：在屏幕右半边拖动（可转满 360°，上下拖动改变俯仰）/ Q E · 抬头看她：按住「抬头」/ Z<br>别站在红色脚印里（绿色脚弓处是安全的）。躲在掩体旁，把她引开，别连累同伴。</div>
 <div id="fade" class="ui"></div><img id="insert" class="ui" alt=""><div id="sub" class="ui"></div><button class="btn" id="skip">跳过 ▶▶</button><div id="jh" class="ui"></div><div id="shadowveil" class="ui"></div><div id="haze" class="ui"></div>
 <div id="toast" class="ui"></div>
@@ -1055,6 +1055,7 @@ const endOrbit=e=>{ if(e.pointerId===orbit.id){ orbit.drag=false; orbit.last=tim
 $('btnQ').onclick=()=>applyQuality({Low:'Med',Med:'High',High:'Low'}[Q]);
 $('btnHelp').onclick=()=>{ const h=$('help'); h.style.opacity=h.style.opacity==='0'?1:0; };
 $('btnMem').onclick=openGallery; $('btnGalClose').onclick=closeGallery; $('btnRetry').onclick=retry;
+$('btnOther').onclick=()=>{ location.href='../other_mode/'; };
 $('btnCgClose').onclick=()=>{ hideCG(); openGallery(); };
 ['contextmenu','gesturestart','dblclick'].forEach(ev=>document.addEventListener(ev,e=>e.preventDefault()));
 
