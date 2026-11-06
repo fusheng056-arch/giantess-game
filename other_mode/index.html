@@ -671,12 +671,31 @@ document.getElementById('btn-reset').addEventListener('click', resetGame);
 document.getElementById('btn-hub').addEventListener('click', () => { location.reload(); });
 window.addEventListener('resize', () => {});
 
-await resolveArt();
-portrait = await createPortraitHUD({ x: W - 220, y: 12, w: 200, h: 228 });
-
-game.banner = '街景=绘图 bg_street_night_crosswalk_v1 · 女主赤足仍为 interim foot_heel_0..5（远腿/脚趾待交付；拒用洋葱皮分层）· 无厨房 · 无ikkimikka素材';
-resetGame();
-requestAnimationFrame(tick);
+(async () => {
+  try {
+    await resolveArt();
+    portrait = await createPortraitHUD({ x: W - 220, y: 12, w: 200, h: 228 });
+    game.banner = '街景=绘图 bg_street_night_crosswalk_v1 · 女主赤足仍为 interim foot_heel_0..5（远腿/脚趾待交付；拒用洋葱皮分层）· 无厨房 · 无ikkimikka素材';
+    resetGame();
+    requestAnimationFrame(tick);
+  } catch (err) {
+    const c = document.getElementById('game');
+    const g = c && c.getContext('2d');
+    if (g) {
+      g.fillStyle = '#2a1020';
+      g.fillRect(0, 0, c.width, c.height);
+      g.fillStyle = '#ffe8f0';
+      g.font = '28px system-ui,sans-serif';
+      g.fillText('画面加载失败', 48, 80);
+      g.font = '20px system-ui,sans-serif';
+      const msg = String(err && err.message ? err.message : err);
+      g.fillText(msg.slice(0, 80), 48, 120);
+    }
+    const hint = document.getElementById('hint');
+    if (hint) hint.textContent = '加载失败：' + (err && err.message ? err.message : err);
+    console.error(err);
+  }
+})();
 
 window.__OTHER__ = {
   reset: resetGame,
